@@ -1,33 +1,10 @@
-# csv-reader, read faster
+# csv-reader-speed — a faster drop-in for csv-reader 1.0.0
 
-[![make.fun · csv-reader-speed-01-run-20261121](https://make.fun/badge/csv-reader-speed-01-run-20261121.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121?utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121)
-[![rank](https://make.fun/badge/csv-reader-speed-01-run-20261121/deplien/csv-reader-speed-01/rank.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121)
-[![reward](https://make.fun/badge/csv-reader-speed-01-run-20261121/deplien/csv-reader-speed-01/reward.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121?utm_source=github&utm_medium=readme&utm_campaign=csv-reader-speed-01-run-20261121)
+A make.fun bounty entry: solve.js exports run(input) returning, for every input {text, header}, exactly the answer csv-reader 1.0.0 returns — {columns, rows, errors} — in a fraction of its CPU time.
 
-An entry for the make.fun bounty [csv-reader-speed-01-run-20261121](https://make.fun/bounty/csv-reader-speed-01-run-20261121)
-("Read broken CSV files faster, 21 November 2026"): a drop-in replacement for csv-reader 1.0.0 that
-returns its exact answer for every input — `{columns, rows, errors}` for an input `{text, header}` —
-and reads the text in a fraction of the reference's CPU time.
-
-## The reading policy
-
-The text is read once, left to right, exactly as csv-reader reads it:
-
-- a U+FEFF at the very start is dropped; a record ends at LF or CRLF; a line left with no characters
-  is no record;
-- outside quotes, a CR not followed by LF is dropped (error `stray_cr`);
-- a field that opens with a quote runs to the next quote that is not doubled: `""` inside it is one
-  quote, and each CRLF or lone CR inside it is read as LF; what follows the closing quote, up to the
-  next comma or line break, is appended as it stands (error `quote_junk`, when the field ends);
-- a quote that never closes is a literal character, and the text after it is read again as unquoted
-  (error `unterminated_quote`); a quote inside an unquoted field is a literal character;
-- fields stay strings, never trimmed or converted;
-- `columns` is the first record when `header` is true, else null; `rows` holds the records after it
-  (every record when `header` is false), each padded with `""` (error `short_row`, with `fields`: its
-  field count) or cut (error `long_row`, with `extra`: the cut fields) to the first record's width;
-- each error is `{code, line, row}` in the order met: `line` the 1-based line its record starts on
-  (counting every LF, CRLF and lone CR inside quotes), `row` its record's index in `rows`, null for
-  the header.
+[![make.fun bounty](https://make.fun/badge/csv-reader-speed-01-run-20261121.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121)
+[![rank](https://make.fun/badge/csv-reader-speed-01-run-20261121/deplien/csv-reader-speed-01/rank.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121)
+[![reward](https://make.fun/badge/csv-reader-speed-01-run-20261121/deplien/csv-reader-speed-01/reward.svg)](https://make.fun/bounty/csv-reader-speed-01-run-20261121)
 
 ## How it runs
 
@@ -35,9 +12,7 @@ The text is read once, left to right, exactly as csv-reader reads it:
 node main.ts   # Node 22; reads /input/cases.json, writes /output/answers.json
 ```
 
-`main.ts` is the driver the harness runs; `solve.js` is the reader itself — a dependency-free ES
-module exporting `run(input)`. Outside a container, `MAKEFUN_INPUT_DIR` and `MAKEFUN_OUTPUT_DIR`
-stand in for `/input` and `/output`.
+`main.ts` is the driver the harness runs; `solve.js` is the reader itself — a dependency-free ES module exporting `run(input)`. Outside a container, `MAKEFUN_INPUT_DIR` and `MAKEFUN_OUTPUT_DIR` stand in for `/input` and `/output`.
 
 ## Files
 
@@ -48,9 +23,11 @@ stand in for `/input` and `/output`.
 
 ## Why it is faster
 
-The reference builds every field a character at a time. This reader scans with `indexOf` instead: a
-record whose line holds no quote and no stray CR — the overwhelming majority — is split on its
-commas directly, and quoted or broken fields are assembled from slices between the few characters
-that matter (commas, quotes, CRs, LFs), so the per-character work is done by the engine's native
-string search rather than by a JavaScript loop. The answers are csv-reader's, byte for byte; only
-the work differs.
+The reference builds every field a character at a time, and a first fast version still hopped between three `indexOf` searches per field. This reader works a whole record at a time: one native scan finds the record's line, and a record with no quote and no stray CR is split on its commas in a single native call. Records that do hold quotes are read field by field with one search per field — a plain field hops to its comma, a simply-quoted field to its closing quote and is sliced out whole. Only the genuinely tangled fields (doubled quotes, CRs inside quotes, junk after a closing quote, a quote that spans lines or never closes) drop to a slice-assembling scan ported from the reference's own logic, and even there every search stays bounded by the field's own stretch, so no search ever scans the rest of the file hunting a rare character. The answers are csv-reader's, byte for byte; only the work differs.
+
+## Verification
+
+- Practice set: 6/6 cases identical to the reference under the kit's scorer.
+- 220 fresh files drawn by the kit's own generator (four seeds) diffed against csv-reader 1.0.0: 0 differences.
+- 25,000 small adversarial broken CSVs (random quotes, CRs, LFs, BOMs, junk after quotes, unterminated quotes, ragged rows, header on and off) diffed against csv-reader 1.0.0: 0 differences.
+- Two runs of the driver over the practice set write byte-identical answers.
